@@ -24,7 +24,35 @@ Differences between the two:
 
 Podman can also replace Docker transparently: `alias docker=podman`, or install the `podman-docker` package.
 
-## Create the software image
+## Get the image
+
+### Option 1: download the published image
+
+The image is built, tested and published automatically (see [Automatic builds](#automatic-builds)):
+
+```bash
+$ENGINE pull ghcr.io/transmisiones-centauro/fast_lio:latest
+```
+
+### Option 2: build it with the Dockerfile
+
+From the root of this repository:
+
+```bash
+$ENGINE build -f container/Dockerfile -t ghcr.io/transmisiones-centauro/fast_lio:latest .
+```
+
+The [Dockerfile](Dockerfile) starts from `docker.io/osrf/ros:jazzy-desktop-full`, clones the Livox SDK, the Livox driver, the Livox/PointCloud2 converter and the `ros2` branch of
+[Ericsii/FAST_LIO_ROS2](https://github.com/Ericsii/FAST_LIO_ROS2), and builds them in `/ros2_ws`. To build another
+repository or branch of FAST-LIO, add `--build-arg FAST_LIO_REPO=<url>` or `--build-arg FAST_LIO_BRANCH=<branch>`.
+
+Check that the image works by running the functional test (see [Automatic builds](#automatic-builds)):
+
+```bash
+$ENGINE run --rm ghcr.io/transmisiones-centauro/fast_lio:latest bash /test/run_test.sh
+```
+
+### Option 3: build it by hand
 
 Start a container from the official ROS 2 Jazzy image:
 
@@ -191,3 +219,23 @@ $ENGINE exec -it fast_lio bash
 source /ros2_ws/install/setup.bash
 ros2 bag play --clock /rosbags/<rosbag>
 ```
+
+## Automatic builds
+
+The workflow [`.github/workflows/container.yml`](../.github/workflows/container.yml) runs on every push to this
+repository, and can also be started by hand from the *Actions* tab. It:
+
+1. Builds the image with `container/Dockerfile`.
+2. Runs the functional test, [`container/test/run_test.sh`](test/run_test.sh). The test starts
+   FAST-LIO with its Velodyne configuration (`config/velodyne.yaml`, `lidar_type: 2`), and [publishes synthetic data](test/synthetic_sensors.py) for 25 seconds: a static sensor in
+   a box-shaped room, with an IMU at 200 Hz and a point cloud at 10 Hz. It passes if at least 50 odometry messages
+   are published and the estimated position stays within 0.5 m of the origin.
+3. Publishes the image to `ghcr.io/transmisiones-centauro/fast_lio`, only if the test passed, with these tags:
+   - the branch name (for example `main`), always pointing to the latest build of that branch;
+   - `sha-<commit>`, one per build;
+   - `latest`, only for builds of the default branch.
+
+For the workflow to publish, the `fast_lio` package must give this repository write access: in the package
+settings, under *Manage Actions access*, add this repository with the *Write* role.
+
+The image is built from the `ros2` branch of `Ericsii/FAST_LIO_ROS2`, not from this repository (whose `main` branch is for ROS 1). A push to this repository rebuilds and retests the image, but changes in `Ericsii/FAST_LIO_ROS2` are only picked up on the next push or manual run.
